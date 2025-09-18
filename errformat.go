@@ -1,10 +1,11 @@
-package linters
+package errformat
 
 import (
 	"fmt"
 	"go/ast"
 	"go/token"
 	"strings"
+
 	"github.com/golangci/plugin-module-register/register"
 	"golang.org/x/tools/go/analysis"
 )
@@ -23,10 +24,10 @@ type ErrFormatLinter struct {
 
 // ErrorInfo содержит информацию об ошибке для анализа
 type ErrorInfo struct {
-	Var           *ast.Ident // Переменная ошибки
-	IsExported    bool       // Экспортируемая ли ошибка
-	IsPackageLevel bool      // Объявлена на уровне пакета
-	Position      token.Pos  // Позиция в коде
+	Var            *ast.Ident // Переменная ошибки
+	IsExported     bool       // Экспортируемая ли ошибка
+	IsPackageLevel bool       // Объявлена на уровне пакета
+	Position       token.Pos  // Позиция в коде
 }
 
 // New создает новый экземпляр линтера
@@ -69,12 +70,12 @@ func (l *ErrFormatLinter) inspectNode(n ast.Node, pass *analysis.Pass) bool {
 	if !ok {
 		return true
 	}
-	
+
 	// Проверить, что это вызов fmt.Errorf
 	if !l.isFmtErrorf(call) {
 		return true
 	}
-	
+
 	// Анализировать аргументы
 	l.analyzeErrorfCall(call, pass)
 	return true
@@ -86,12 +87,12 @@ func (l *ErrFormatLinter) isFmtErrorf(call *ast.CallExpr) bool {
 	if !ok {
 		return false
 	}
-	
+
 	ident, ok := sel.X.(*ast.Ident)
 	if !ok {
 		return false
 	}
-	
+
 	return ident.Name == "fmt" && sel.Sel.Name == "Errorf"
 }
 
@@ -174,27 +175,27 @@ func (l *ErrFormatLinter) isErrorType(ident *ast.Ident, pass *analysis.Pass) boo
 	if pass.TypesInfo == nil || pass.TypesInfo.Types == nil {
 		return false
 	}
-	
+
 	// Получить тип выражения
 	typeInfo, ok := pass.TypesInfo.Types[ident]
 	if !ok {
 		return false
 	}
-	
+
 	// Проверить, что это интерфейс error
 	// Тип error - это предопределенный интерфейс
 	if typeInfo.Type == nil {
 		return false
 	}
-	
+
 	// Проверить, что тип реализует интерфейс error
 	// Для этого сравним строковое представление типа
 	typeStr := typeInfo.Type.String()
-	
+
 	// Тип error может быть представлен как "error" или более сложными типами, которые его реализуют
 	// Но для простоты проверим основные случаи
 	return typeStr == "error" ||
-		   typeStr == "interface{}" && typeInfo.Type.Underlying().String() == "interface{error() string}"
+		typeStr == "interface{}" && typeInfo.Type.Underlying().String() == "interface{error() string}"
 }
 
 // isPackageLevel проверяет, объявлена ли переменная на уровне пакета
@@ -202,7 +203,7 @@ func (l *ErrFormatLinter) isPackageLevel(obj *ast.Object) bool {
 	if obj == nil || obj.Kind != ast.Var {
 		return false
 	}
-	
+
 	// Проверить тип объявления
 	switch decl := obj.Decl.(type) {
 	case *ast.GenDecl:
@@ -229,20 +230,20 @@ func (l *ErrFormatLinter) isExported(name string) bool {
 func (l *ErrFormatLinter) checkFormatCompliance(formatString string, errorVars []ErrorInfo, call *ast.CallExpr, pass *analysis.Pass) {
 	// Найти все %w и %v в format string
 	formats := l.parseFormatSpecifiers(formatString)
-	
+
 	// Сопоставить с переменными ошибок
 	if len(formats) != len(errorVars) {
 		return // Количество не совпадает, возможно есть другие аргументы
 	}
-	
+
 	for i, errorVar := range errorVars {
 		if i >= len(formats) {
 			break
 		}
-		
+
 		expectedFormat := l.getExpectedFormat(errorVar)
 		actualFormat := formats[i]
-		
+
 		if expectedFormat != actualFormat {
 			l.reportFormatError(errorVar, expectedFormat, actualFormat, call, pass)
 		}
@@ -252,7 +253,7 @@ func (l *ErrFormatLinter) checkFormatCompliance(formatString string, errorVars [
 // parseFormatSpecifiers парсит спецификаторы формата в строке
 func (l *ErrFormatLinter) parseFormatSpecifiers(formatString string) []string {
 	var formats []string
-	
+
 	for i := 0; i < len(formatString); i++ {
 		if formatString[i] == '%' && i+1 < len(formatString) {
 			next := formatString[i+1]
@@ -262,7 +263,7 @@ func (l *ErrFormatLinter) parseFormatSpecifiers(formatString string) []string {
 			}
 		}
 	}
-	
+
 	return formats
 }
 
@@ -272,7 +273,7 @@ func (l *ErrFormatLinter) getExpectedFormat(errorVar ErrorInfo) string {
 	if errorVar.IsExported && errorVar.IsPackageLevel {
 		return "%w"
 	}
-	
+
 	// Для всех остальных используем %v
 	return "%v"
 }
@@ -280,7 +281,7 @@ func (l *ErrFormatLinter) getExpectedFormat(errorVar ErrorInfo) string {
 // reportFormatError создает отчет об ошибке форматирования
 func (l *ErrFormatLinter) reportFormatError(errorVar ErrorInfo, expected, actual string, call *ast.CallExpr, pass *analysis.Pass) {
 	var message string
-	
+
 	if errorVar.IsExported && errorVar.IsPackageLevel {
 		message = fmt.Sprintf("exported package-level error '%s' should use %%w instead of %s for error wrapping",
 			errorVar.Var.Name, actual)
@@ -288,12 +289,12 @@ func (l *ErrFormatLinter) reportFormatError(errorVar ErrorInfo, expected, actual
 		message = fmt.Sprintf("non-exported error '%s' should use %%v instead of %s for error formatting",
 			errorVar.Var.Name, actual)
 	}
-	
+
 	pass.Report(analysis.Diagnostic{
-		Pos:      call.Pos(),
-		End:      call.End(),
-		Category: "errformat",
-		Message:  message,
+		Pos:            call.Pos(),
+		End:            call.End(),
+		Category:       "errformat",
+		Message:        message,
 		SuggestedFixes: l.createSuggestedFix(call, actual, expected),
 	})
 }
@@ -303,10 +304,10 @@ func (l *ErrFormatLinter) createSuggestedFix(call *ast.CallExpr, wrong, correct 
 	if len(call.Args) == 0 {
 		return nil
 	}
-	
+
 	// Получить позицию format string
 	formatArg := call.Args[0]
-	
+
 	return []analysis.SuggestedFix{
 		{
 			Message: fmt.Sprintf("Replace %s with %s", wrong, correct),

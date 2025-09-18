@@ -1,4 +1,4 @@
-package linters
+package errformat
 
 import (
 	"path/filepath"

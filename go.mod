@@ -1,4 +1,4 @@
-module github.com/yourusername/errformat
+module github.com/TheDonrad/errformat
 
 go 1.24.0
 
