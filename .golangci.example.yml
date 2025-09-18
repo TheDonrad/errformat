@@ -1,0 +1,13 @@
+version: "2"
+
+linters:
+  disable-all: true
+  enable:
+    - errformat
+
+  settings:
+    custom:
+      errformat:
+        type: module
+        description: Checks proper error formatting in fmt.Errorf calls - exported package-level errors should use %w, others should use %v
+        original-url: github.com/yourusername/errformat
